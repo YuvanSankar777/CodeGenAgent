@@ -1,0 +1,38 @@
+# Local full-stack: app container + MySQL. Mirrors production but with a real
+# MySQL database so you can exercise the history feature end-to-end.
+services:
+  db:
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpw
+      MYSQL_DATABASE: codegen
+      MYSQL_USER: codegen
+      MYSQL_PASSWORD: codegen
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-prootpw"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  app:
+    build: .
+    ports:
+      - "7860:7860"
+    environment:
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
+      MYSQL_HOST: db
+      MYSQL_PORT: "3306"
+      MYSQL_USER: codegen
+      MYSQL_PASSWORD: codegen
+      MYSQL_DATABASE: codegen
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  mysql_data:
