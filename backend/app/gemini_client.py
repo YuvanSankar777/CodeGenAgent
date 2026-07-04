@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from typing import Any, Dict
 
 from google import genai
@@ -46,6 +47,21 @@ class GeminiError(RuntimeError):
     """Raised when the Gemini call fails or returns unusable output."""
 
 
+# Gemini occasionally returns transient errors (503 "high demand", 429 rate
+# limit, 5xx). These are safe to retry with backoff.
+_TRANSIENT_CODES = {429, 500, 502, 503, 504}
+_MAX_RETRIES = 3
+_BACKOFF_BASE = 1.5  # seconds: 1.5, 3.0, 6.0
+
+
+def _is_transient(exc: Exception) -> bool:
+    code = getattr(exc, "code", None)
+    if code in _TRANSIENT_CODES:
+        return True
+    text = str(exc).upper()
+    return any(str(c) in text for c in _TRANSIENT_CODES) or "UNAVAILABLE" in text
+
+
 _client: genai.Client | None = None
 
 
@@ -67,21 +83,37 @@ def generate_code(
     client = _get_client()
     user_prompt = build_user_prompt(requirement, language, include_tests)
 
-    try:
-        response = client.models.generate_content(
-            model=settings.gemini_model,
-            contents=user_prompt,
-            config=types.GenerateContentConfig(
-                system_instruction=SYSTEM_INSTRUCTION,
-                temperature=settings.gemini_temperature,
-                max_output_tokens=settings.gemini_max_output_tokens,
-                response_mime_type="application/json",
-                response_schema=RESPONSE_SCHEMA,
-            ),
-        )
-    except Exception as exc:  # pragma: no cover - network dependent
-        logger.exception("Gemini request failed")
-        raise GeminiError(f"Gemini request failed: {exc}") from exc
+    config = types.GenerateContentConfig(
+        system_instruction=SYSTEM_INSTRUCTION,
+        temperature=settings.gemini_temperature,
+        max_output_tokens=settings.gemini_max_output_tokens,
+        response_mime_type="application/json",
+        response_schema=RESPONSE_SCHEMA,
+    )
+
+    last_exc: Exception | None = None
+    for attempt in range(1, _MAX_RETRIES + 1):
+        try:
+            response = client.models.generate_content(
+                model=settings.gemini_model,
+                contents=user_prompt,
+                config=config,
+            )
+            break
+        except Exception as exc:  # pragma: no cover - network dependent
+            last_exc = exc
+            if attempt < _MAX_RETRIES and _is_transient(exc):
+                wait = _BACKOFF_BASE * (2 ** (attempt - 1))
+                logger.warning(
+                    "Gemini transient error (attempt %d/%d), retrying in %.1fs: %s",
+                    attempt, _MAX_RETRIES, wait, exc,
+                )
+                time.sleep(wait)
+                continue
+            logger.exception("Gemini request failed")
+            raise GeminiError(f"Gemini request failed: {exc}") from exc
+    else:  # pragma: no cover - loop always breaks or raises
+        raise GeminiError(f"Gemini request failed: {last_exc}")
 
     raw = (response.text or "").strip()
     if not raw:

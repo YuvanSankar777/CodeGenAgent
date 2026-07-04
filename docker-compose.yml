@@ -8,8 +8,9 @@ services:
       MYSQL_DATABASE: codegen
       MYSQL_USER: codegen
       MYSQL_PASSWORD: codegen
-    ports:
-      - "3306:3306"
+    # No host port published — the app reaches MySQL over the internal compose
+    # network (host 3306 is often taken by a local MySQL). Map to a host port
+    # here only if you need to inspect the DB from your machine, e.g. "3307:3306".
     volumes:
       - mysql_data:/var/lib/mysql
     healthcheck:

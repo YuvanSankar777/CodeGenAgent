@@ -48,7 +48,10 @@ app.add_middleware(
 
 @app.on_event("startup")
 def _startup() -> None:
-    init_db()
+    # Retry with backoff so a database that is still booting (MySQL first-run
+    # init briefly refuses connections even after its healthcheck passes) does
+    # not permanently disable history for the process.
+    init_db(retries=15, delay=1.0)
 
 
 # --- API routes -------------------------------------------------------------
@@ -58,7 +61,7 @@ def _startup() -> None:
 def health() -> HealthResponse:
     return HealthResponse(
         status="ok",
-        db_available=database.DB_AVAILABLE,
+        db_available=database.ensure_db(),
         model=settings.gemini_model,
     )
 
@@ -76,7 +79,7 @@ def generate(req: GenerateRequest, db: Session = Depends(get_db)) -> GenerateRes
 
     persisted = False
     gen_id = None
-    if database.DB_AVAILABLE:
+    if database.ensure_db():
         try:
             row = Generation(
                 requirement=req.requirement,
@@ -110,7 +113,7 @@ def generate(req: GenerateRequest, db: Session = Depends(get_db)) -> GenerateRes
 
 @app.get("/api/history", response_model=list[HistoryItem])
 def history(limit: int = 20, db: Session = Depends(get_db)) -> list[HistoryItem]:
-    if not database.DB_AVAILABLE:
+    if not database.ensure_db():
         return []
     limit = max(1, min(limit, 100))
     rows = (
@@ -124,7 +127,7 @@ def history(limit: int = 20, db: Session = Depends(get_db)) -> list[HistoryItem]
 
 @app.delete("/api/history/{gen_id}")
 def delete_history(gen_id: int, db: Session = Depends(get_db)) -> dict:
-    if not database.DB_AVAILABLE:
+    if not database.ensure_db():
         raise HTTPException(status_code=503, detail="Database not available.")
     row = db.get(Generation, gen_id)
     if not row:
