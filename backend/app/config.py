@@ -18,7 +18,7 @@ class Settings:
         self.gemini_model: str = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
         self.gemini_temperature: float = float(os.getenv("GEMINI_TEMPERATURE", "0.2"))
         self.gemini_max_output_tokens: int = int(
-            os.getenv("GEMINI_MAX_OUTPUT_TOKENS", "4096")
+            os.getenv("GEMINI_MAX_OUTPUT_TOKENS", "8192")
         )
 
         # --- Database (MySQL) ---

@@ -83,13 +83,22 @@ def generate_code(
     client = _get_client()
     user_prompt = build_user_prompt(requirement, language, include_tests)
 
-    config = types.GenerateContentConfig(
+    config_kwargs: Dict[str, Any] = dict(
         system_instruction=SYSTEM_INSTRUCTION,
         temperature=settings.gemini_temperature,
         max_output_tokens=settings.gemini_max_output_tokens,
         response_mime_type="application/json",
         response_schema=RESPONSE_SCHEMA,
     )
+    # Gemini 2.5 models spend part of the output-token budget on hidden
+    # "thinking" tokens, which can truncate longer code mid-JSON. Disable it so
+    # the whole budget goes to the actual answer. Guarded: older SDKs / models
+    # may not support ThinkingConfig.
+    try:
+        config_kwargs["thinking_config"] = types.ThinkingConfig(thinking_budget=0)
+    except Exception:  # pragma: no cover - SDK/model without thinking support
+        pass
+    config = types.GenerateContentConfig(**config_kwargs)
 
     last_exc: Exception | None = None
     for attempt in range(1, _MAX_RETRIES + 1):
@@ -114,6 +123,18 @@ def generate_code(
             raise GeminiError(f"Gemini request failed: {exc}") from exc
     else:  # pragma: no cover - loop always breaks or raises
         raise GeminiError(f"Gemini request failed: {last_exc}")
+
+    # Detect truncation (hit the output-token ceiling) and report it clearly
+    # instead of surfacing a confusing "unterminated string" JSON error.
+    try:
+        finish = str(response.candidates[0].finish_reason)
+    except Exception:  # pragma: no cover - shape varies
+        finish = ""
+    if "MAX_TOKENS" in finish:
+        raise GeminiError(
+            "The response was too long and got cut off. Try a more specific "
+            "requirement, or raise GEMINI_MAX_OUTPUT_TOKENS."
+        )
 
     raw = (response.text or "").strip()
     if not raw:
