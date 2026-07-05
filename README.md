@@ -1,6 +1,6 @@
 ---
 title: CodeGenAgent
-emoji: ⌘
+emoji: ⚡
 colorFrom: green
 colorTo: yellow
 sdk: docker
