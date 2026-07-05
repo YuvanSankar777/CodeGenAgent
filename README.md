@@ -1,3 +1,14 @@
+---
+title: CodeGenAgent
+emoji: ⌘
+colorFrom: green
+colorTo: yellow
+sdk: docker
+app_port: 7860
+pinned: false
+short_description: Turn plain-language requirements into runnable code (Gemini)
+---
+
 <div align="center">
 
 # ⌘ CodeGenAgent
