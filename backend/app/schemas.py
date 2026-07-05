@@ -51,3 +51,29 @@ class HealthResponse(BaseModel):
     status: str
     db_available: bool
     model: str
+
+
+# --- Auth -------------------------------------------------------------------
+
+
+class SignupRequest(BaseModel):
+    email: str = Field(..., min_length=3, max_length=255)
+    password: str = Field(..., min_length=6, max_length=200)
+    name: Optional[str] = Field(default=None, max_length=120)
+
+
+class LoginRequest(BaseModel):
+    email: str = Field(..., min_length=3, max_length=255)
+    password: str = Field(..., min_length=1, max_length=200)
+
+
+class UserOut(BaseModel):
+    id: int
+    email: str
+    name: Optional[str] = None
+    created_at: Optional[str] = None
+
+
+class AuthResponse(BaseModel):
+    token: str
+    user: UserOut

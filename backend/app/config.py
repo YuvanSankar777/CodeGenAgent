@@ -38,6 +38,11 @@ class Settings:
         ]
         self.app_env: str = os.getenv("APP_ENV", "development")
 
+        # --- Auth ---
+        # Used to sign session tokens. Set a strong SECRET_KEY in production.
+        self.secret_key: str = os.getenv("SECRET_KEY", "dev-insecure-change-me")
+        self.token_ttl_hours: int = int(os.getenv("TOKEN_TTL_HOURS", "168"))
+
     @property
     def sqlalchemy_url(self) -> str:
         """Return the SQLAlchemy connection URL for MySQL."""

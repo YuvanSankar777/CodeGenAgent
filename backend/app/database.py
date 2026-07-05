@@ -1,9 +1,9 @@
-"""Database setup for MySQL via SQLAlchemy.
+"""Database setup via SQLAlchemy.
 
-The connection is created lazily and defensively: if MySQL is unreachable
-(common on ephemeral hosts like Hugging Face Spaces without an attached
-database), the app still starts and code generation keeps working — only the
-history feature is disabled. ``DB_AVAILABLE`` reflects that state.
+Primary store is MySQL. If MySQL is unreachable (e.g. Hugging Face Spaces
+without an attached database), the app automatically falls back to a local
+SQLite file so accounts and history keep working everywhere. ``DB_AVAILABLE``
+reflects whether *some* database is usable.
 """
 from __future__ import annotations
 
@@ -21,66 +21,89 @@ settings = get_settings()
 
 Base = declarative_base()
 
-# ``pool_pre_ping`` recycles dead connections; ``pool_recycle`` avoids MySQL's
-# default 8h idle timeout dropping pooled connections under us.
-engine = create_engine(
-    settings.sqlalchemy_url,
-    pool_pre_ping=True,
-    pool_recycle=3600,
-    future=True,
-)
+# SQLite fallback location (writable in the container and locally).
+_SQLITE_URL = "sqlite:///./codegen.db"
 
+
+def _make_engine(url: str):
+    if url.startswith("sqlite"):
+        return create_engine(
+            url, connect_args={"check_same_thread": False}, future=True
+        )
+    # ``pool_pre_ping`` recycles dead connections; ``pool_recycle`` avoids
+    # MySQL's default 8h idle timeout dropping pooled connections under us.
+    return create_engine(url, pool_pre_ping=True, pool_recycle=3600, future=True)
+
+
+engine = _make_engine(settings.sqlalchemy_url)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 
 # Toggled to True once tables are confirmed to exist.
 DB_AVAILABLE = False
+# True once we've fallen back to SQLite (surfaced in /api/health as the backend).
+USING_SQLITE = settings.sqlalchemy_url.startswith("sqlite")
 
-# Monotonic timestamp of the last connection attempt, used to throttle the
-# lazy reconnect in ``ensure_db`` so we don't hammer a genuinely-absent DB on
-# every request.
 _last_attempt = 0.0
 _RETRY_INTERVAL = 10.0  # seconds between lazy reconnect attempts
 
 
-def init_db(retries: int = 1, delay: float = 0.0) -> bool:
-    """Create tables if possible. Returns True when the DB is usable.
+def _create_all() -> None:
+    from . import models  # noqa: F401 — register models on Base.metadata
 
-    ``retries``/``delay`` let startup wait out a database that is still booting
-    (e.g. MySQL's first-run init, which briefly refuses connections even after
-    its healthcheck passes).
+    Base.metadata.create_all(bind=engine)
+
+
+def _switch_to_sqlite() -> None:
+    """Rebind the module engine/session to the SQLite fallback."""
+    global engine, SessionLocal, USING_SQLITE
+    engine = _make_engine(_SQLITE_URL)
+    SessionLocal.configure(bind=engine)
+    USING_SQLITE = True
+
+
+def init_db(retries: int = 1, delay: float = 0.0) -> bool:
+    """Ensure a usable database, preferring MySQL, falling back to SQLite.
+
+    ``retries``/``delay`` let startup wait out a MySQL instance that is still
+    booting before we give up and fall back.
     """
     global DB_AVAILABLE, _last_attempt
-    # Import models so they register on ``Base.metadata`` before create_all.
-    from . import models  # noqa: F401
-
     _last_attempt = time.monotonic()
-    last_exc: Exception | None = None
-    for attempt in range(1, retries + 1):
-        try:
-            Base.metadata.create_all(bind=engine)
-            if not DB_AVAILABLE:
-                logger.info("MySQL connected — generation history enabled.")
-            DB_AVAILABLE = True
-            return True
-        except Exception as exc:  # pragma: no cover - depends on environment
-            last_exc = exc
-            if attempt < retries:
-                time.sleep(delay)
 
-    DB_AVAILABLE = False
-    logger.warning(
-        "MySQL unavailable (%s). Running without history persistence.", last_exc
-    )
-    return False
+    # Try the configured (MySQL) engine first, with retries.
+    if not USING_SQLITE:
+        for attempt in range(1, retries + 1):
+            try:
+                _create_all()
+                if not DB_AVAILABLE:
+                    logger.info("MySQL connected — accounts & history enabled.")
+                DB_AVAILABLE = True
+                return True
+            except Exception as exc:  # pragma: no cover - environment dependent
+                if attempt < retries:
+                    time.sleep(delay)
+                else:
+                    logger.warning(
+                        "MySQL unavailable (%s). Falling back to SQLite.", exc
+                    )
+
+    # Fall back to (or continue on) SQLite.
+    try:
+        if not USING_SQLITE:
+            _switch_to_sqlite()
+        _create_all()
+        if not DB_AVAILABLE:
+            logger.info("Using SQLite fallback — accounts & history enabled.")
+        DB_AVAILABLE = True
+        return True
+    except Exception as exc:  # pragma: no cover - should not happen
+        DB_AVAILABLE = False
+        logger.error("No database available (%s).", exc)
+        return False
 
 
 def ensure_db() -> bool:
-    """Return current DB availability, lazily retrying a dead connection.
-
-    Called on each DB-backed request so history self-heals the moment MySQL
-    becomes reachable, without a one-shot startup probe deciding for the whole
-    process lifetime. Retries are throttled to ``_RETRY_INTERVAL``.
-    """
+    """Return current DB availability, lazily retrying if not yet ready."""
     if DB_AVAILABLE:
         return True
     if time.monotonic() - _last_attempt < _RETRY_INTERVAL:

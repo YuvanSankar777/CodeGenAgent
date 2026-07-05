@@ -3,9 +3,29 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import Column, DateTime, Integer, String, Text
+from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text
 
 from .database import Base
+
+
+class User(Base):
+    """A registered account."""
+
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    email = Column(String(255), nullable=False, unique=True, index=True)
+    name = Column(String(120), nullable=True)
+    password_hash = Column(String(255), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    def as_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "email": self.email,
+            "name": self.name,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
 
 
 class Generation(Base):
@@ -14,6 +34,7 @@ class Generation(Base):
     __tablename__ = "generations"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
     requirement = Column(Text, nullable=False)
     language = Column(String(32), nullable=False, index=True)
     filename = Column(String(255), nullable=True)
