@@ -22,7 +22,7 @@ settings = get_settings()
 Base = declarative_base()
 
 # SQLite fallback location (writable in the container and locally).
-_SQLITE_URL = "sqlite:///./codegen.db"
+_SQLITE_URL = f"sqlite:///{settings.sqlite_path}"
 
 
 def _make_engine(url: str):

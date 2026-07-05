@@ -29,6 +29,8 @@ class Settings:
         self.mysql_user: str = os.getenv("MYSQL_USER", "codegen")
         self.mysql_password: str = os.getenv("MYSQL_PASSWORD", "codegen")
         self.mysql_database: str = os.getenv("MYSQL_DATABASE", "codegen")
+        # SQLite fallback file path (used when MySQL is unreachable).
+        self.sqlite_path: str = os.getenv("SQLITE_PATH", "codegen.db")
 
         # --- App ---
         self.cors_origins: list[str] = [

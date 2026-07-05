@@ -28,7 +28,12 @@ COPY --from=frontend /ui/dist ./frontend_dist
 
 ENV FRONTEND_DIST=/app/frontend_dist \
     PORT=7860 \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    SQLITE_PATH=/app/data/codegen.db
+
+# Writable dir for the SQLite fallback (the container runs as non-root uid 1000,
+# e.g. on Hugging Face Spaces, and /app is owned by root).
+RUN mkdir -p /app/data && chown -R appuser:appuser /app/data
 
 USER appuser
 EXPOSE 7860
