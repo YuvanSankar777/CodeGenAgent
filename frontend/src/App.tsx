@@ -214,8 +214,6 @@ export default function App() {
 
   return (
     <>
-      <Scene3D />
-      <div className="veil" />
       <div className="progress" ref={progressRef} style={{ width: "0%" }} />
 
       <div className="page">
@@ -248,6 +246,8 @@ export default function App() {
 
         {/* HERO */}
         <header className="hero">
+          <Scene3D />
+          <div className="hero-veil" />
           <div className="container hero-grid">
             <div>
               <span className="eyebrow">
@@ -266,10 +266,10 @@ export default function App() {
                 ))}
                 <br />
                 <span
-                  className="word grad"
+                  className="word"
                   style={{ animationDelay: `${headline.length * 0.12}s` }}
                 >
-                  production-ready code
+                  production-ready <span className="mark">code</span>
                 </span>
               </h1>
               <p className="lead">
@@ -450,7 +450,7 @@ export default function App() {
           <div className="container">
             <Reveal>
               <p className="cta-line">
-                Ready to <span className="grad">generate something?</span>
+                Ready to <span className="mark">generate something?</span>
               </p>
               <a href="#tool" className="btn primary" style={{ display: "inline-flex" }}>
                 <IconWand />

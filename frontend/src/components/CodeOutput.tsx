@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
-import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
+import { oneLight } from "react-syntax-highlighter/dist/esm/styles/prism";
 import type { GenerateResponse } from "../api";
 import { IconCopy, IconCheck, IconDownload, IconInfo, IconBox } from "../icons";
 
@@ -71,7 +71,7 @@ export default function CodeOutput({ result }: Props) {
       <div className="code-scroll">
         <SyntaxHighlighter
           language={PRISM_LANG[result.language] || "text"}
-          style={oneDark}
+          style={oneLight}
           customStyle={{
             margin: 0,
             borderRadius: 0,
